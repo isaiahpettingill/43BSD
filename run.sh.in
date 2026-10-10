@@ -1,0 +1,47 @@
+#!/bin/sh
+# run.sh -- boot a 4.3BSD VAX780 instance created by create.sh
+#
+#   ./run.sh              console on this terminal
+#   ./run.sh -t           console on telnet port 2323 (telnet localhost 2323)
+#   ./run.sh -s           single-user boot (root shell, no getty login)
+#   ./run.sh -n           dry run: start the emulator but do not run the guest
+set -e
+
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+BOOTCFG=boot.ini
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-t|--telnet)
+			sed 's|^attach ts 43.tap|attach ts 43.tap\nset console telnet=2323|' \
+				"$DIR/boot.ini" > "$DIR/boot-telnet.ini"
+			BOOTCFG=boot-telnet.ini
+			echo "console on telnet 2323 -- connect with: telnet localhost 2323"
+			;;
+		-s|--single)
+			# deposit r11 1 makes the bootstrap stop at the "Boot:" prompt
+			# instead of autobooting, so you can type "boot -s" for a root
+			# shell with none of /etc/rc.
+			sed 's|^deposit r11 0|deposit r11 1|' \
+				"$DIR/boot.ini" > "$DIR/boot-single.ini"
+			BOOTCFG=boot-single.ini
+			echo "at the Boot: prompt, type:  boot -s"
+			;;
+		-n|--no-run)
+			sed 's|^run 2||' "$DIR/boot.ini" > "$DIR/boot-norun.ini"
+			BOOTCFG=boot-norun.ini
+			;;
+		-h|--help) sed -n '2,8p' "$0"; exit 0 ;;
+		*) echo "unknown option: $1" >&2; exit 2 ;;
+	esac
+	shift
+done
+
+[ -f "$DIR/rq.dsk" ] || { echo "no rq.dsk in $DIR" >&2; exit 1; }
+[ -f "$DIR/.running" ] && { echo "$DIR is already running" >&2; exit 1; }
+
+trap 'rm -f "$DIR/.running"' EXIT INT TERM
+: > "$DIR/.running"
+
+cd "$DIR"
+./vax780 "$BOOTCFG"
